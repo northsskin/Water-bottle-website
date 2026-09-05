@@ -42,6 +42,19 @@ jobs:
 
       - run: npm run build
 
+      # While the Pages source is "deploy from a branch", GitHub's built-in
+      # Jekyll pipeline ALSO runs on every push and races this workflow. It
+      # republishes the repository as-is, so whenever it finishes second the
+      # site reverts to raw source and goes blank. Pointing the source at this
+      # workflow retires that pipeline instead of racing it.
+      - name: Point Pages at this workflow
+        run: |
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow \
+            || gh api -X POST "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow \
+            || echo "::warning::Could not set the Pages source. Set Settings → Pages → Source to 'GitHub Actions' by hand, or the branch pipeline will keep overwriting this deployment."
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

@@ -14,6 +14,15 @@ export default function CanvasLoader({ ready }) {
   const [progress, setProgress] = useState(8)
   const [visible, setVisible] = useState(true)
 
+  // Failsafe. The cover is a full-screen near-white panel, so if the renderer
+  // never reports a first frame — a lost context, a driver that hands back a
+  // dead canvas — it would sit there looking exactly like a broken blank page.
+  // Uncovering a page whose bottle never arrived beats showing nothing at all.
+  useEffect(() => {
+    const t = setTimeout(() => setVisible(false), 15000)
+    return () => clearTimeout(t)
+  }, [])
+
   useEffect(() => {
     if (ready) {
       setProgress(100)
