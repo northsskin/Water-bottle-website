@@ -3,88 +3,183 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { sectionProgress } from '../../scroll/scrollState.js'
 import { bottleRuntime } from '../runtime.js'
-import { GLASS, pourPhases } from '../pour.js'
-
-const UP = new THREE.Vector3(0, 1, 0)
+import { GLASS, lipDirection, lipPoint, pourPhases } from '../pour.js'
 
 /**
  * The water in the air between the lip and the glass.
  *
- * Built once as a canonical tube running 0→1 along +Y, then aimed and stretched
- * each frame — rebuilding a TubeGeometry every frame to follow the mouth would
- * cost more than the rest of the scene put together.
+ * The mesh is a plain unit cylinder — radius 1, running 0→1 along +Y — and the
+ * vertex shader sweeps it along a quadratic Bézier each frame. That curve is a
+ * parabola, which is the path the water actually takes, and it costs two
+ * uniforms rather than a TubeGeometry rebuilt every frame.
  *
- * The profile narrows towards the bottom because a falling stream accelerates
- * and the same volume per second has to fit through a smaller cross-section.
- * That taper, plus a wobble that grows with distance from the lip, is most of
- * what separates "water pouring" from "a cylinder between two points".
+ * Sweeping in the shader is also what makes the surface shade correctly. The
+ * previous version displaced positions and left the normals cylindrical, so the
+ * bulges travelling down the stream moved the silhouette but never caught the
+ * light — which is exactly why it read as a flat band of colour rather than a
+ * round column of water. Here the frame is rebuilt per vertex and the normal is
+ * derived from it, including the radius slope, so the stream has a highlight
+ * running down it and the pulses are visible as shading rather than only as
+ * outline.
  */
-const DROPS = 12
-
 export default function PourStream() {
-  const meshRef = useRef()
-  const dropsRef = useRef()
-
   const geometry = useMemo(() => {
-    const HEIGHT_SEGMENTS = 28
-    const RADIAL = 14
+    // A cylinder of radius 1 from y=0 to y=1, open at both ends. Every vertex
+    // therefore arrives at the shader with position.y = t along the stream and
+    // position.xz = its direction around the circle, which is all the sweep
+    // needs. Enough height segments to bend smoothly, enough radial ones that
+    // the silhouette is round rather than faceted.
+    const HEIGHT_SEGMENTS = 48
+    const RADIAL = 24
     const points = []
     for (let i = 0; i <= HEIGHT_SEGMENTS; i++) {
-      const t = i / HEIGHT_SEGMENTS
-      // sqrt falloff: continuity for a stream under gravity.
-      const r = THREE.MathUtils.lerp(1, 0.3, Math.sqrt(t))
-      points.push(new THREE.Vector2(r, t))
+      points.push(new THREE.Vector2(1, i / HEIGHT_SEGMENTS))
     }
-    const geo = new THREE.LatheGeometry(points, RADIAL)
-    geo.computeVertexNormals()
-    return geo
+    return new THREE.LatheGeometry(points, RADIAL)
   }, [])
 
   const material = useMemo(() => {
     const m = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color('#7fcdea'),
-      roughness: 0.05,
+      color: new THREE.Color('#6ec4e8'),
+      roughness: 0.04,
       metalness: 0,
       ior: 1.333,
       clearcoat: 1,
-      clearcoatRoughness: 0.03,
+      clearcoatRoughness: 0.02,
       side: THREE.DoubleSide,
     })
-    m.userData.uniforms = { uTime: { value: 0 }, uWobble: { value: 1 } }
-    m.onBeforeCompile = (shader) => {
-      shader.uniforms.uTime = m.userData.uniforms.uTime
-      shader.uniforms.uWobble = m.userData.uniforms.uWobble
-      shader.uniforms.uRimColor = { value: new THREE.Color('#d8f4ff') }
-      shader.vertexShader =
-        'uniform float uTime;\nuniform float uWobble;\n' +
-        shader.vertexShader.replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-           float travel = transformed.y;
 
-           // Volume pulses running down the stream. Real falling water is never
-           // a smooth cone; these travelling bulges are most of what stops it
-           // reading as a moulded object.
-           float pulse = sin(travel * 26.0 - uTime * 13.0) * 0.16
-                       + sin(travel * 41.0 - uTime * 19.0) * 0.09;
-           transformed.xz *= 1.0 + pulse * smoothstep(0.05, 0.5, travel);
-
-           float amp = uWobble * travel * travel * 0.055;
-           transformed.x += sin(travel * 19.0 - uTime * 11.0) * amp;
-           transformed.z += cos(travel * 15.0 - uTime * 9.0) * amp;`,
-        )
-      shader.fragmentShader =
-        'uniform vec3 uRimColor;\n' +
-        shader.fragmentShader.replace(
-          '#include <emissivemap_fragment>',
-          `#include <emissivemap_fragment>
-           float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 2.5);
-           totalEmissiveRadiance += uRimColor * fres * 0.35;`,
-        )
+    const uniforms = {
+      uTime: { value: 0 },
+      uControl: { value: new THREE.Vector3() },
+      uEnd: { value: new THREE.Vector3() },
+      uRadius: { value: 0.05 },
+      uWobble: { value: 0.012 },
+      // Visible span of the stream. The head falls when the pour starts and the
+      // tail drains from the lip when it stops.
+      uHead: { value: 0 },
+      uTail: { value: 0 },
     }
-    m.customProgramCacheKey = () => 'aquem-pour-stream'
+    m.userData.uniforms = uniforms
+
+    m.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms)
+      shader.uniforms.uRimColor = { value: new THREE.Color('#e2f7ff') }
+
+      shader.vertexShader =
+        `uniform float uTime;
+         uniform vec3 uControl;
+         uniform vec3 uEnd;
+         uniform float uRadius;
+         uniform float uWobble;
+         uniform float uHead;
+         uniform float uTail;
+
+         // Quadratic Bézier with p0 at the origin: the mesh is positioned at
+         // the lip, so the whole curve is expressed relative to it.
+         vec3 bezier(float t) {
+           float u = 1.0 - t;
+           return 2.0 * u * t * uControl + t * t * uEnd;
+         }
+         vec3 bezierTangent(float t) {
+           return 2.0 * (1.0 - 2.0 * t) * uControl + 2.0 * t * uEnd;
+         }
+
+         // Lateral meander, growing with the fall. Real streams are never
+         // perfectly plumb.
+         vec3 meander(float t) {
+           float a = uWobble * t * t;
+           return vec3(sin(t * 13.0 - uTime * 7.0) * a * 0.6,
+                       0.0,
+                       cos(t * 11.0 - uTime * 6.0) * a);
+         }
+
+         float streamRadius(float t) {
+           // Water clings and swells where it leaves the rim, then narrows:
+           // a falling stream accelerates, so the same volume per second has
+           // to fit through less cross-section. Gentle, because over 10cm the
+           // real narrowing is slight — the old 1.0 -> 0.3 was an 11x area
+           // change, which is a cone, not a stream.
+           float swell = 1.0 + 0.34 * exp(-t * 11.0);
+           float taper = mix(1.0, 0.58, sqrt(t));
+
+           // Travelling volume pulses. Low frequency and generous amplitude on
+           // purpose: at the size this draws on screen the previous settings
+           // moved the silhouette by about a pixel, which is indistinguishable
+           // from a smooth cone. Two slow waves plus a faster one that only
+           // appears in the lower half, where a real stream starts to break up.
+           float pulse = sin(t * 12.0 - uTime * 8.0) * 0.10
+                       + sin(t * 19.0 - uTime * 13.0) * 0.06;
+           pulse += sin(t * 31.0 - uTime * 21.0) * 0.07 * smoothstep(0.5, 1.0, t);
+           float body = taper * swell * (1.0 + pulse * smoothstep(0.06, 0.5, t));
+
+           // Ends: the head falling on start, the tail draining on stop. Both
+           // taper to a point rather than cutting off square. The edges are
+           // pushed just past 0 and 1 so that a fully-open stream is attached
+           // at the lip and solid at the tip, rather than pinched at both.
+           float hd = uHead * 1.2;
+           float tl = uTail * 1.2 - 0.2;
+           float lead = smoothstep(hd, hd - 0.16, t);
+           float trail = smoothstep(tl, tl + 0.16, t);
+           return body * lead * trail;
+         }
+
+         varying float vStreamT;
+         vec3 vStreamPosition;
+        ` + shader.vertexShader
+
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          '#include <beginnormal_vertex>',
+          `float t = clamp(position.y, 0.0, 1.0);
+           vec2 around = normalize(position.xz);
+
+           vec3 tangent = normalize(bezierTangent(t));
+           // The pour happens in the XY plane, so Z is always a safe reference
+           // for the frame — tangent can never be parallel to it.
+           vec3 frameA = normalize(cross(tangent, vec3(0.0, 0.0, 1.0)));
+           vec3 frameB = cross(frameA, tangent);
+           vec3 radial = frameA * around.x + frameB * around.y;
+
+           float r = streamRadius(t);
+           vStreamPosition = bezier(t) + meander(t) + radial * (r * uRadius);
+
+           // Surface normal of a swept tube leans along the axis wherever the
+           // radius is changing. Without this the swell and the pulses would
+           // move the outline but not the shading, which is what made the old
+           // stream look like a flat ribbon.
+           float dr = (streamRadius(min(t + 0.012, 1.0)) - r) / 0.012 * uRadius;
+           float speed = max(length(bezierTangent(t)), 1e-4);
+           vec3 objectNormal = normalize(radial - tangent * (dr / speed));
+           vStreamT = t;`,
+        )
+        .replace('#include <begin_vertex>', 'vec3 transformed = vStreamPosition;')
+
+      shader.fragmentShader =
+        'uniform vec3 uRimColor;\nvarying float vStreamT;\n' +
+        shader.fragmentShader
+          .replace(
+            '#include <color_fragment>',
+            `#include <color_fragment>
+             // Thicker water reads darker, and the column gathers as it falls,
+             // so the head is paler than the tail. A flat colour top to bottom
+             // is a large part of what made this look printed on.
+             diffuseColor.rgb *= mix(1.18, 0.82, vStreamT);`,
+          )
+          .replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+             // A bright edge is most of what makes a water column read as
+             // translucent while staying opaque to the renderer.
+             float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 1.8);
+             totalEmissiveRadiance += uRimColor * fres * 0.7;`,
+          )
+    }
+    m.customProgramCacheKey = () => 'aquem-pour-stream-v2'
     return m
   }, [])
+
+  const meshRef = useRef()
 
   useEffect(
     () => () => {
@@ -94,38 +189,18 @@ export default function PourStream() {
     [geometry, material],
   )
 
-  const dropGeometry = useMemo(() => new THREE.IcosahedronGeometry(1, 0), [])
-  const dropMaterial = useMemo(
-    () =>
-      new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color('#8ed4ee'),
-        emissive: new THREE.Color('#5ab6dc'),
-        emissiveIntensity: 0.35,
-        roughness: 0.05,
-        clearcoat: 1,
-      }),
-    [],
-  )
-  useEffect(
-    () => () => {
-      dropGeometry.dispose()
-      dropMaterial.dispose()
-    },
-    [dropGeometry, dropMaterial],
-  )
-
   const scratch = useMemo(
     () => ({
-      target: new THREE.Vector3(),
+      lip: new THREE.Vector3(),
       dir: new THREE.Vector3(),
-      quat: new THREE.Quaternion(),
-      point: new THREE.Vector3(),
-      dummy: new THREE.Object3D(),
+      target: new THREE.Vector3(),
+      control: new THREE.Vector3(),
+      end: new THREE.Vector3(),
     }),
     [],
   )
-  const width = useRef(0)
-  const clock = useRef(0)
+  const head = useRef(0)
+  const tail = useRef(0)
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05)
@@ -135,37 +210,43 @@ export default function PourStream() {
     const p = sectionProgress('pour')
     const engaged = p > 0.0005 && p < 0.9995
     const phases = pourPhases(engaged ? p : 0)
+    const u = material.userData.uniforms
+    u.uTime.value += dt
 
-    material.userData.uniforms.uTime.value += dt
-    width.current = THREE.MathUtils.lerp(width.current, engaged ? phases.flow : 0, 1 - Math.exp(-9 * dt))
+    // Damped so the stream still behaves if the wheel is thrown rather than
+    // scrolled: the head cannot arrive before it has fallen.
+    const smooth = 1 - Math.exp(-7 * dt)
+    head.current = THREE.MathUtils.lerp(head.current, engaged ? phases.flowOn : 0, smooth)
+    tail.current = THREE.MathUtils.lerp(tail.current, engaged ? phases.flowOff : 0, smooth)
 
-    clock.current += dt
-
-    if (width.current < 0.01) {
+    if (head.current - tail.current < 0.02) {
       mesh.visible = false
-      if (dropsRef.current) dropsRef.current.visible = false
       return
     }
     mesh.visible = true
+    u.uHead.value = head.current
+    u.uTail.value = tail.current
 
-    const mouth = bottleRuntime.mouth
-    scratch.target.set(GLASS.x, GLASS.floor + bottleRuntime.glassLevel, 0)
-    scratch.dir.copy(scratch.target).sub(mouth)
-    const distance = scratch.dir.length()
-    scratch.dir.divideScalar(distance || 1)
+    // Start the stream at the rim's low edge rather than the centre of the
+    // neck opening, so it leaves the bottle instead of crossing over it.
+    lipPoint(bottleRuntime.mouth, bottleRuntime.tilt, bottleRuntime.scale, scratch.lip)
+    mesh.position.copy(scratch.lip)
 
-    mesh.position.copy(mouth)
-    scratch.quat.setFromUnitVectors(UP, scratch.dir)
-    mesh.quaternion.copy(scratch.quat)
+    // Sink the landing point just under the surface: a stream that stops
+    // exactly at the waterline shows its open end as a hard disc.
+    scratch.target.set(GLASS.x, GLASS.floor + bottleRuntime.glassLevel - 0.05, 0)
+    scratch.end.copy(scratch.target).sub(scratch.lip)
 
-    // Radius tracks the flow rate; length always spans lip to water surface.
-    const radius = 0.052 * width.current
-    mesh.scale.set(radius, distance, radius)
-    // Wobble is authored in the canonical tube's units, where the radius is 1;
-    // dividing by the real radius keeps the ripple the same size on screen
-    // however thick the stream currently is.
-    material.userData.uniforms.uWobble.value = 0.16 / Math.max(radius, 0.004)
+    // Control point one third along the initial direction — the tangent at the
+    // top of a Bézier is (control - start), so this is what sets the water
+    // leaving over the lip before gravity straightens it out.
+    lipDirection(bottleRuntime.tilt, scratch.dir)
+    scratch.control.copy(scratch.dir).multiplyScalar(scratch.end.length() * 0.34)
+
+    u.uControl.value.copy(scratch.control)
+    u.uEnd.value.copy(scratch.end)
+    u.uRadius.value = 0.05
   })
 
-  return <mesh ref={meshRef} geometry={geometry} material={material} />
+  return <mesh ref={meshRef} geometry={geometry} material={material} frustumCulled={false} />
 }

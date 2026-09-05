@@ -119,7 +119,13 @@ export function pourPhases(p) {
   // bottle, which is what read as it sliding around inside the neck.
   const capOff = smoothstep(0.05, 0.24, p) * (1 - smoothstep(0.86, 0.96, p))
   const tilt = smoothstep(0.28, 0.44, p) * (1 - smoothstep(0.74, 0.88, p))
-  const flow = smoothstep(0.4, 0.47, p) * (1 - smoothstep(0.72, 0.78, p))
+  // Kept as two halves as well as their product. A stream does not fade in
+  // uniformly: it starts at the lip and the head falls to the glass, and when
+  // it stops the tail drains downward from the lip. Thinning the whole rod at
+  // once is the thing that reads as an object being scaled.
+  const flowOn = smoothstep(0.4, 0.47, p)
+  const flowOff = smoothstep(0.72, 0.78, p)
+  const flow = flowOn * (1 - flowOff)
 
   // One driver for both vessels. The glass runs very slightly behind the bottle
   // because the water it is gaining is still in the air.
@@ -137,6 +143,8 @@ export function pourPhases(p) {
     capOff,
     tilt,
     flow,
+    flowOn,
+    flowOff,
     /** Back into the 0–1 domain the fill slider and the clipping plane use. */
     bottleFill: THREE.MathUtils.clamp(
       (bottleLevel - BOTTLE.fillMin) / (BOTTLE.fillMax - BOTTLE.fillMin),
@@ -154,3 +162,35 @@ export function pourPhases(p) {
  * the lip in a circle away from the glass mid-pour.
  */
 export const MOUTH_LOCAL = new THREE.Vector3(0, BOTTLE.neckTop, 0)
+
+/**
+ * Where the water actually leaves the bottle, which is *not* `MOUTH_LOCAL`.
+ *
+ * That point is the centre of the neck opening, on the spin axis — the right
+ * place to pivot about, and the wrong place to start a stream. Water runs down
+ * the inside of the tipped neck and departs from the lowest point of the rim,
+ * so a stream born at the centre appears to start behind the neck and crosses
+ * over it, which is what made it read as a band laid on top of the bottle
+ * rather than liquid leaving it.
+ *
+ * The bottle is tilted by `-tilt` about Z, so the rim's local +X edge maps to
+ * (cos tilt, -sin tilt): out towards the glass and downward. Derived from the
+ * tilt rather than read off the mesh, so it stays correct under the spin.
+ */
+export function lipPoint(mouth, tilt, scale, out) {
+  const r = BOTTLE.rNeck * scale
+  return out.set(
+    mouth.x + Math.cos(tilt) * r,
+    mouth.y - Math.sin(tilt) * r,
+    mouth.z,
+  )
+}
+
+/**
+ * Unit direction the water leaves the lip in: partly out over the rim, partly
+ * already falling. Gravity does the rest — this only has to set the tangent at
+ * the top of the arc.
+ */
+export function lipDirection(tilt, out) {
+  return out.set(Math.cos(tilt) * 0.55, -(0.45 + Math.sin(tilt) * 0.55), 0).normalize()
+}

@@ -117,12 +117,34 @@ are over before the card ever pins.
   `pour.js` drives the bottle, the cap, the stream, the glass and the splash, so
   they cannot disagree about whether water is currently in the air.
 
-  The stream is a canonical tube built once and aimed each frame — rebuilding a
-  TubeGeometry per frame would cost more than the rest of the scene. Its profile
-  narrows towards the bottom because a falling stream accelerates and the same
-  volume per second has to fit through less cross-section. The splash is one
-  InstancedMesh of ballistic droplets that respawn at the impact point, so it
-  sustains while water lands rather than firing once.
+  The stream is a plain unit cylinder that the vertex shader sweeps along a
+  quadratic Bézier each frame — that curve is a parabola, which is the path the
+  water actually takes, and it costs two uniforms rather than a TubeGeometry
+  rebuilt per frame. Its profile narrows towards the bottom because a falling
+  stream accelerates and the same volume per second has to fit through less
+  cross-section.
+
+  Sweeping in the shader is also what makes it *shade* like water. An earlier
+  version displaced the positions and left the normals cylindrical, so the
+  bulges travelling down the stream moved the silhouette but never caught the
+  light, and it read as a flat band of colour. Here the frame is rebuilt per
+  vertex and the normal comes from it, including the slope of the radius, so
+  there is a highlight running down the column.
+
+  Two staging details matter as much as the shading. The stream starts at the
+  **lowest point of the rim**, not at `MOUTH_LOCAL` — that point is the centre
+  of the neck opening and sits on the spin axis, which is the right place to
+  pivot about and the wrong place to start a stream: water born there appears
+  to begin behind the neck and cross over it. And it does not fade in as a
+  whole; `flowOn` drops the head from the lip to the glass and `flowOff` drains
+  the tail downward, because thinning the entire rod at once is what reads as
+  an object being scaled.
+
+  The splash is one InstancedMesh of ballistic droplets that respawn at the
+  impact point, so it sustains while water lands rather than firing once. Each
+  is stretched along its own velocity: a sphere moving quickly reads as a bead
+  floating in the drink, while the same volume drawn into a streak reads as
+  spray.
 
   Both levels are solved through **volume**, not height. The bottle is a wide
   barrel and the glass a narrow taper, so the same volume is a very different

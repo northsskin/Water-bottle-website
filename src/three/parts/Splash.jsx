@@ -7,6 +7,7 @@ import { GLASS, glassInnerRadius, pourPhases } from '../pour.js'
 
 const COUNT = 34
 const GRAVITY = -3.2
+const UP = new THREE.Vector3(0, 1, 0)
 
 /**
  * Droplets thrown up where the stream hits the water.
@@ -19,13 +20,18 @@ const GRAVITY = -3.2
 export default function Splash() {
   const meshRef = useRef()
 
-  const geometry = useMemo(() => new THREE.IcosahedronGeometry(0.024, 0), [])
+  // Detail 1 rather than 0: a 20-face icosahedron at this size is visibly a
+  // faceted lump, and lumps at the waterline read as beads floating in the
+  // drink rather than as spray.
+  const geometry = useMemo(() => new THREE.IcosahedronGeometry(0.017, 1), [])
   const material = useMemo(
     () =>
       new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color('#a9e2f7'),
+        color: new THREE.Color('#9fddf4'),
+        // Was 0.5, which lit the droplets brighter than the water they came
+        // out of and made each one a separate object.
         emissive: new THREE.Color('#69c6ea'),
-        emissiveIntensity: 0.5,
+        emissiveIntensity: 0.18,
         roughness: 0.05,
         metalness: 0,
         clearcoat: 1,
@@ -55,6 +61,7 @@ export default function Splash() {
     [],
   )
   const dummy = useMemo(() => new THREE.Object3D(), [])
+  const heading = useMemo(() => new THREE.Vector3(), [])
 
   useFrame((_, delta) => {
     const mesh = meshRef.current
@@ -110,7 +117,18 @@ export default function Splash() {
 
       dummy.position.set(d.x, d.y, d.z)
       const fade = Math.min(d.life * 3, 1) * flow
-      dummy.scale.setScalar(d.scale * fade)
+      const size = d.scale * fade
+
+      // Stretch each droplet along the direction it is travelling. A sphere
+      // moving fast reads as a bead; the same volume drawn out into a streak
+      // reads as spray, and it costs one lookAt rather than a second mesh.
+      const speed = Math.hypot(d.vx, d.vy, d.vz)
+      if (speed > 1e-4) {
+        heading.set(d.vx / speed, d.vy / speed, d.vz / speed)
+        dummy.quaternion.setFromUnitVectors(UP, heading)
+      }
+      const stretch = 1 + Math.min(speed * 1.1, 1.6)
+      dummy.scale.set(size / Math.sqrt(stretch), size * stretch, size / Math.sqrt(stretch))
       dummy.updateMatrix()
       mesh.setMatrixAt(i, dummy.matrix)
     }
