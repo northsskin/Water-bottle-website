@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { PRODUCT } from '../product.js'
 
 const LINKS = [
-  { href: '#features', label: 'Features' },
+  { href: '#insulation', label: 'Features' },
   { href: '#customize', label: 'Customise' },
   { href: '#specs', label: 'Specs' },
 ]
@@ -17,7 +17,7 @@ export default function Nav() {
     >
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-10">
         <a
-          href="#top"
+          href="#hero"
           className="pointer-events-auto text-sm font-semibold tracking-[0.32em] text-ink-900"
         >
           {PRODUCT.brand}
@@ -36,7 +36,7 @@ export default function Nav() {
         </nav>
 
         <a
-          href="#buy"
+          href="#final"
           className="pointer-events-auto rounded-full border border-ink-900/12 bg-bone-50/80 px-5 py-2 text-sm font-medium text-ink-900 backdrop-blur-md transition-colors hover:bg-bone-50"
         >
           $48

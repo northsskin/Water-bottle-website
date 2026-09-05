@@ -1,6 +1,6 @@
 import { CAPACITIES, COLORS, FINISHES, PRODUCT } from '../product.js'
 import { useConfig } from '../store.js'
-import { useFocusTrigger } from '../hooks.js'
+import { useStorySection } from '../scroll/sections.js'
 import { Icon, Social } from './Icons.jsx'
 import Reveal from './Reveal.jsx'
 
@@ -11,7 +11,7 @@ const SOCIALS = [
 ]
 
 export default function Footer() {
-  const ref = useFocusTrigger('final')
+  const ref = useStorySection('final')
   const color = useConfig((s) => s.color)
   const finish = useConfig((s) => s.finish)
   const capacity = useConfig((s) => s.capacity)
@@ -25,7 +25,7 @@ export default function Footer() {
     .join(' · ')
 
   return (
-    <section id="buy" ref={ref} className="relative px-6 pb-10 pt-28 lg:px-10 lg:pt-36">
+    <section id="final" ref={ref} className="relative px-6 pb-10 pt-28 lg:px-10 lg:pt-36">
       <div className="mx-auto max-w-7xl">
         <div className="grid items-center gap-12 md:grid-cols-2">
           {/* Left half stays empty on desktop — the bottle slides into it. */}
@@ -62,7 +62,7 @@ export default function Footer() {
             {SOCIALS.map((social) => (
               <a
                 key={social.id}
-                href="#buy"
+                href="#final"
                 aria-label={social.label}
                 className="pointer-events-auto text-ink-400 transition-colors hover:text-ink-900"
               >

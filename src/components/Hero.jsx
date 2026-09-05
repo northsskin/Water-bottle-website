@@ -1,21 +1,23 @@
 import { motion, useReducedMotion } from 'framer-motion'
 import { PRODUCT } from '../product.js'
-import { useFocusTrigger } from '../hooks.js'
+import { useStorySection } from '../scroll/sections.js'
 import { Icon } from './Icons.jsx'
 
-export default function Hero() {
-  const ref = useFocusTrigger('hero')
+export default function Hero({ introDone = true }) {
+  const ref = useStorySection('hero')
   const reduced = useReducedMotion()
 
+  // The copy waits for the assembly to finish so the two do not compete; once
+  // the intro is done the original stagger plays as before.
   const rise = (delay) => ({
     initial: { opacity: 0, y: reduced ? 0 : 22 },
-    animate: { opacity: 1, y: 0 },
+    animate: introDone ? { opacity: 1, y: 0 } : { opacity: 0, y: reduced ? 0 : 22 },
     transition: { duration: reduced ? 0.3 : 0.9, delay, ease: [0.22, 1, 0.36, 1] },
   })
 
   return (
     <section
-      id="top"
+      id="hero"
       ref={ref}
       className="relative flex min-h-[100svh] flex-col justify-between px-6 pb-10 pt-28 lg:px-10 lg:pb-14"
     >
@@ -44,7 +46,7 @@ export default function Hero() {
           {...rise(0.55)}
         >
           <a
-            href="#buy"
+            href="#final"
             className="pointer-events-auto group inline-flex items-center gap-2 rounded-full bg-ink-900 px-7 py-3.5 text-sm font-medium text-bone-50 shadow-lift transition-transform duration-300 hover:-translate-y-0.5"
           >
             Add to cart — $48

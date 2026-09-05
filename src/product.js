@@ -28,7 +28,8 @@ export const CAPACITIES = [
 export const FEATURES = [
   {
     id: 'insulation',
-    focus: 'body',
+    section: 'insulation',
+    pinned: false,
     icon: 'thermometer',
     title: '24 hours cold, 12 hours hot',
     body: 'A double-wall vacuum chamber sits between two shells of 18/8 steel, so the outside stays dry and the inside stays exactly where you left it.',
@@ -37,7 +38,8 @@ export const FEATURES = [
   },
   {
     id: 'cap',
-    focus: 'cap',
+    section: 'cap',
+    pinned: true,
     icon: 'cap',
     title: 'One-turn leakproof cap',
     body: 'A machined thread and a food-grade silicone gasket seal in a single quarter-turn. The loop is cast into the cap, not glued on, so it will not shear off in a pack.',
@@ -46,7 +48,8 @@ export const FEATURES = [
   },
   {
     id: 'capacity',
-    focus: 'label',
+    section: 'pour',
+    pinned: true,
     icon: 'drop',
     title: '750 ml, in a one-hand grip',
     body: 'A 68 mm barrel clears every cup holder and bike cage we could find, while the tapered waist keeps the centre of gravity low when it is full.',
@@ -55,7 +58,8 @@ export const FEATURES = [
   },
   {
     id: 'eco',
-    focus: 'base',
+    section: 'eco',
+    pinned: false,
     icon: 'leaf',
     title: '90% recycled, 100% recyclable',
     body: 'The shell is recycled steel, the cap is bio-based resin, and the whole bottle comes apart with a coin so every part can be recycled separately.',

@@ -14,22 +14,30 @@ npm run preview
 ## Stack
 
 React 19 · Vite 7 · react-three-fiber 9 + drei 10 · three 0.185 · Tailwind CSS 4
-· Framer Motion 12 · Zustand 5.
+· Framer Motion 12 · Zustand 5 · Lenis · postprocessing.
 
 ## How it fits together
 
 ```
 src/
   App.jsx              page shell: fixed canvas layer + scrolling sections
-  store.js             shared config (colour/finish/capacity/fill) + camera focus
+  store.js             product configuration (colour/finish/capacity/fill)
   product.js           all copy and product data
-  hooks.js             scroll-focus observer, media queries
-  components/          Nav, Hero, Features, Customize, Specs, Footer, Reveal, …
+  scroll/
+    scrollState.js     the scroll clock: playhead, section progress, velocity
+    sections.js        section registry; turns scroll position into a playhead
+    useSmoothScroll.js Lenis, plus page progress and velocity
   three/
-    Experience.jsx     <Canvas>, studio lighting, contact shadow, camera rig
-    Bottle.jsx         the model: geometry, materials, fill animation
+    Experience.jsx     <Canvas>, lighting, quality tier, effect composer
+    timeline.js        the camera flight: one keyframe per story section
+    CameraRig.jsx      samples the flight path; drag as an additive offset
+    Intro.jsx          the opening shot
+    quality.js         the three quality tiers and the runtime demotion
+    Bottle.jsx         composes the parts; capacity scale and scroll-driven spin
+    parts/             Shell, Liquid (pour + slosh), CapAssembly (explode)
     bottleProfile.js   the bottle's dimensions and lathe profiles
-    poses.js           the camera choreography
+  components/
+    motion/            SplitText, CountUp, ProgressRail
 ```
 
 ### The bottle
@@ -64,12 +72,15 @@ hides the fill, which the configurator says out loud.
 
 ### The camera
 
-`poses.js` holds one pose per section — hero, four feature details, customize,
-specs, CTA. An `IntersectionObserver` on each block reports which one is in the
-middle band of the viewport (`hooks.js`), the store records it, and `CameraRig`
-eases the camera and orbit target toward that pose every frame.
+Scroll position is the playhead. `scroll/sections.js` measures where each story
+section's centre sits in the document and turns the scroll offset into
+`scrollState.u` — a float index into the section list, so `u = 2` means "section
+2 is dead centre". `timeline.js` holds one keyframe per section and samples them
+off a Catmull-Rom spline at that index, which passes exactly through each
+authored pose while shaping the travel between. The camera is therefore always
+moving with the wheel rather than easing toward a destination.
 
-Two details worth knowing:
+Details worth knowing:
 
 - **`offset` moves the camera, not the bottle.** It is a fraction of the
   viewport width, applied along the camera's right vector to both position and
@@ -78,31 +89,83 @@ Two details worth knowing:
 - **Pose heights scale with capacity.** A 1 L bottle is 12% taller, so the y
   components ride along with it — otherwise the cap close-up would frame empty
   space.
+- **`spin` climbs monotonically across the page**, so scrolling turns the
+  product about one full revolution top to bottom.
+- **Dragging is additive.** It accumulates an angular offset that is added to
+  whatever the scroll is pointing at, then decays back to zero, so the two
+  compose instead of fighting. The canvas is `touch-action: pan-y`, which leaves
+  vertical scrolling to the browser and gives sideways gestures to the rig —
+  that is what makes the bottle inspectable on a phone without eating the page
+  scroll.
 
-Dragging takes over from the scroll choreography and holds for 1.8 s after
-release. Wheel-zoom is disabled on purpose: the canvas is full-bleed behind the
-page, so the wheel belongs to the document.
+### The set pieces
+
+Two sections pin (`position: sticky` inside a 220vh runway) and scrub their
+animation against their own progress:
+
+- **Exploded cap** (`parts/CapAssembly.jsx`) — crown, gasket and pull ring come
+  apart by different distances while the crown unscrews, hold, then reseat. Each
+  callout is parented to its part so labels track rather than point at where a
+  piece used to be. The opening sequence drives the same rig backwards.
+- **Pour** (`parts/Liquid.jsx`) — the level drains then refills past where it
+  started, and the clipping plane's *normal* is sprung off scroll velocity, so
+  the waterline tilts and rocks back. The surface disc reorients into the plane,
+  because a tilted waterline with a flat lid inside it looks wrong immediately.
+
+### The opening
+
+`three/Intro.jsx` owns the camera for 3.6 s: it pushes in from a low wide angle
+while tone-mapping exposure comes up out of black, and the cap descends and
+screws on as the bottle fills. Any scroll, key or the Skip control cuts to the
+end; `prefers-reduced-motion` never starts it.
 
 ### Responsive behaviour
 
-On phones the poses are replaced with gentler, pulled-back framings and the
-lateral offset is dropped, since there is no second column. `OrbitControls` is
-not mounted at all and the canvas takes no pointer events — three.js sets
-`touch-action: none` on connect, which would otherwise swallow page scrolling.
-Text that would sit on top of the bottle gets a frosted card (`components/ui.js`)
-that dissolves at the `md` breakpoint.
+On phones the keyframes are replaced with gentler, pulled-back framings and the
+lateral offset is dropped, since there is no second column. The pinned set
+pieces aim *below* the action so it plays in the upper half of the screen, and
+their copy cards pin to the bottom rather than centring — otherwise the card
+would sit squarely on top of the thing it is describing. Text that would
+overlap the bottle gets a frosted card (`components/ui.js`) that dissolves at
+the `md` breakpoint, and the cap callouts are dropped entirely, since a phone
+has no room for a leader line and a label.
+
+Dragging works on touch: the canvas is `touch-action: pan-y`, so the browser
+keeps vertical scrolling and the rig only receives sideways gestures. (The
+previous build used `OrbitControls`, which sets `touch-action: none` on connect
+and would have swallowed the page scroll — that is why it was desktop-only.)
 
 ### Performance
 
-The whole 3D stack is behind `React.lazy` in its own chunk, with `<Suspense>`
-boundaries outside and inside the `<Canvas>`, so the page shell paints while it
-downloads; `CanvasLoader` covers the gap and clears on the renderer's first
-frame. Pixel ratio is capped at 2 (1.5 on mobile), the environment map renders
-once, and per-frame work reads the store with `getState()` so animating the
-camera never re-renders React. `prefers-reduced-motion` stops the idle rotation
-and shortens the scroll reveals.
+`three/quality.js` defines three tiers. The starting tier is guessed from core
+count, device memory and pixel density; drei's `<PerformanceMonitor>` then
+demotes at runtime if the guess was optimistic. Demotion is deliberately
+one-way — promoting on a good stretch would let settings flicker as you scroll.
 
-A `SceneBoundary` error boundary keeps the page usable if WebGL is unavailable.
+|  | high | medium | low / mobile |
+|---|---|---|---|
+| DPR | 2 | 1.5 | 1 |
+| Bloom + vignette | yes | yes | no |
+| Depth of field | yes | no | no |
+| Caustics | yes | no | no |
+| Transmission pass | full res | 0.7× | 0.5× |
+| Contact shadow | 512 | 256 | 256, one frame |
+
+Transmission is the expensive one — it renders the whole scene again every
+frame — but switching it off costs the liquid, which is the product. The bottom
+tier shrinks that pass to a quarter of the pixels instead; through a refracting
+wall nobody can tell.
+
+The 3D stack is behind `React.lazy` in its own chunk with `<Suspense>` either
+side of the `<Canvas>`, so the page shell paints while it downloads. Per-frame
+work reads plain objects (`scrollState`, `useConfig.getState()`) rather than
+React state, so nothing in the render loop re-renders the page. A
+`SceneBoundary` error boundary keeps the page usable if WebGL is unavailable.
+
+**Diagnostics**: append `?stats` for a frame-rate, draw-call and tier readout,
+and `?tier=low|medium|high` to pin a tier and compare them. Draw calls and
+triangle counts are the honest measure of whether a tier is cheaper — frame rate
+hides behind vsync until the moment it collapses.
 
 ## Deployment
 

@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import { CAPACITIES, COLORS, FINISHES } from '../product.js'
 import { useConfig } from '../store.js'
-import { useFocusTrigger } from '../hooks.js'
+import { useStorySection } from '../scroll/sections.js'
 import { Icon } from './Icons.jsx'
 import Reveal from './Reveal.jsx'
 import { glassOnMobile } from './ui.js'
@@ -19,7 +19,7 @@ function Field({ label, value, children }) {
 }
 
 export default function Customize() {
-  const ref = useFocusTrigger('customize')
+  const ref = useStorySection('customize')
   // Individual selectors: the store also carries per-frame scene state, and this
   // panel should not re-render every time the camera focus changes.
   const color = useConfig((s) => s.color)
@@ -35,7 +35,7 @@ export default function Customize() {
   const activeCapacity = CAPACITIES.find((c) => c.id === capacity)
 
   return (
-    <section id="customize" ref={ref} className="relative px-6 py-28 lg:px-10 lg:py-36">
+    <section id="customize" ref={ref} className="relative flex min-h-[110vh] items-center px-6 py-28 lg:px-10 lg:py-36">
       <div className="mx-auto grid max-w-7xl items-center gap-12 md:grid-cols-2">
         {/* Left half stays empty on desktop — the bottle slides into it. */}
         <div aria-hidden="true" className="hidden md:block" />
