@@ -1,16 +1,21 @@
 name: Build the site into docs/
 
-# GitHub Pages is serving this repository from a branch, which publishes the
-# repo as-is — it cannot build a Vite app. Handing the browser src/main.jsx as
-# raw JSX is what rendered a blank page.
+# Pages has been served from a branch for this repo, which publishes the
+# repository as-is and cannot build a Vite app — that is what handed the
+# browser src/main.jsx as raw JSX and rendered a blank page.
 #
-# So the build output is committed instead: `npm run build` writes to docs/,
-# which is the one sub-directory Pages will serve, and this workflow keeps it
-# in step with the source on every push. docs/.nojekyll (copied from public/)
-# turns Jekyll off, so Pages just copies the files across.
+# So the build output is committed. `npm run build` writes to docs/, which is
+# the one sub-directory a branch-served Pages site will serve, and the first job
+# keeps it in step with the source on every push. docs/.nojekyll (copied from
+# public/) turns Jekyll off, so Pages copies the files across rather than trying
+# to render them.
 #
-# This means no manual settings change is required, and there is no longer a
-# race between two publishers: whatever is in docs/ is the site.
+# The second job also publishes the same directory as a Pages artifact, for the
+# case where Settings → Pages → Source is "GitHub Actions" instead. It is
+# allowed to fail: exactly one of the two routes is live at a time, and which
+# one cannot be read from here (the Actions token gets 403 on the Pages config
+# endpoint). Both publish identical bytes, so whichever is in force is correct
+# and there is nothing left for them to race over.
 
 on:
   push:
@@ -24,13 +29,14 @@ on:
       - 'docs/**'
   workflow_dispatch:
 
-# Needed to push the rebuilt docs/ back to the branch.
 permissions:
-  contents: write
+  contents: write # to push the rebuilt docs/
+  pages: write
+  id-token: write
 
 concurrency:
-  group: docs-${{ github.ref }}
-  cancel-in-progress: true
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -54,7 +60,7 @@ jobs:
       - name: Commit docs/ if it drifted from the source
         run: |
           if [ -z "$(git status --porcelain -- docs)" ]; then
-            echo "docs/ already matches the source — nothing to publish."
+            echo "docs/ already matches the source — nothing to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
@@ -62,3 +68,25 @@ jobs:
           git add docs
           git commit -m "Rebuild docs/ from ${GITHUB_SHA:0:7}"
           git push
+
+      - uses: actions/configure-pages@v5
+        continue-on-error: true
+
+      - uses: actions/upload-pages-artifact@v3
+        continue-on-error: true
+        with:
+          path: docs
+
+  # Only does anything when the Pages source is "GitHub Actions"; when it is a
+  # branch, this fails and the branch pipeline publishes the same docs/ instead.
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true

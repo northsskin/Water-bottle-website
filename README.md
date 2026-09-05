@@ -222,9 +222,18 @@ it publishes is the built site. Two details make it work —
   root, at a project sub-path like `user.github.io/Water-bottle-website/`, or
   behind a custom domain, with no repository name hardcoded anywhere.
 
-If you ever do switch the source to "GitHub Actions", nothing breaks — `docs/`
-is just an ordinary directory then, and the workflow can go back to uploading it
-as a Pages artifact.
+The workflow also uploads the same `docs/` as a Pages artifact and tries to
+deploy it, for the case where the source *is* "GitHub Actions". That job is
+allowed to fail, because exactly one of the two routes is live at a time and a
+workflow cannot read which — the Pages config endpoint is 403 to the Actions
+token. Both publish identical bytes, so whichever is in force is correct, and
+there is nothing left for the two to race over.
+
+The one setting still not covered is **branch source with folder `/` (root)**,
+which serves the repository root and therefore the unbuilt `index.html`. If the
+site ever goes blank again, that is what happened: `index.html` watches for its
+own entry script failing to load — which can only happen when the source is
+being served raw — and renders a short page naming the setting to change.
 
 **Committing build output is not normally good practice**, and it is worth being
 plain about why it is here: a branch-served Pages site has no build step, so the
