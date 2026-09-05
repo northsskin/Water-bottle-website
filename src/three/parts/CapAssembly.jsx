@@ -60,8 +60,11 @@ function Callout({ part, y, opacityRef }) {
   )
 }
 
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
+
 export default function CapAssembly({ showLabels = true }) {
   const root = useRef()
+  const offset = useMemo(() => new THREE.Vector3(), [])
   const crownLift = useRef()
   const crownSpin = useRef()
   const gasketLift = useRef()
@@ -92,13 +95,37 @@ export default function CapAssembly({ showLabels = true }) {
     if (ringLift.current) ringLift.current.position.y = t * 0.6
     if (gasketLift.current) gasketLift.current.position.y = t * 0.16
 
-    // The cap unscrews, then shrinks away as the bottle tips: parts lift along
-    // the bottle's own axis, so a cap left visible at 57 degrees flies off into
-    // the corner of frame instead of reading as set aside.
+    // Taking the cap off. It unscrews and rises, then swings away from the
+    // glass and fades — rather than shrinking on the spot, which read as the
+    // cap sinking into the neck of the bottle.
     if (root.current) {
-      const put = 1 - THREE.MathUtils.clamp(bottleRuntime.tilt / 0.5, 0, 1)
-      root.current.scale.setScalar(put)
-      root.current.visible = put > 0.02
+      const rise = smoothstep(0, 0.4, pourLift)
+      const away = smoothstep(0.3, 1, pourLift)
+      // Translation only. This group's origin is the bottle's base, not the
+      // cap, so rotating it swings the cap through an arc two units long and
+      // throws it out of frame. The unscrew already lives on crownSpin, which
+      // is centred where it should be.
+      //
+      // The offset is authored in view space and then un-spun, because this
+      // group sits inside the bottle's rotation: left-and-towards-the-camera
+      // becomes right-and-behind once the page has turned the bottle 150°,
+      // which parked the whole motion out of sight.
+      offset.set(-away * 0.55, rise * 0.34 - away * 0.32, away * 0.8)
+      offset.applyAxisAngle(Y_AXIS, -bottleRuntime.spin)
+      root.current.position.copy(offset)
+
+      // Held at full opacity while it travels; only the last stretch fades, so
+      // the cap is seen coming off rather than dissolving as it lifts.
+      const opacity = 1 - smoothstep(0.6, 1, pourLift)
+      root.current.visible = opacity > 0.02
+      if (root.current.visible) {
+        root.current.traverse((child) => {
+          if (!child.material) return
+          child.material.transparent = opacity < 0.999
+          child.material.opacity = opacity
+          child.material.depthWrite = opacity > 0.9
+        })
+      }
     }
 
     // Labels arrive only once the parts have actually separated, so they never

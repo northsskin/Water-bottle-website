@@ -47,7 +47,13 @@ function Card({ feature, index }) {
  * together — while the sticky inner panel keeps the copy on screen throughout.
  */
 function PinnedFeature({ feature, index }) {
-  const ref = useStorySection(feature.section)
+  // Measured across the *pinned* window, not the whole travel through the
+  // viewport. With the default range, progress 0→1 spans the section entering
+  // and leaving, so most of the set piece played while it was still sliding
+  // into view — the opening beats were over before the card ever pinned.
+  // 'start start' is the moment the sticky child engages, 'end end' the moment
+  // it releases.
+  const ref = useStorySection(feature.section, ['start start', 'end end'])
 
   return (
     <section ref={ref} id={feature.section} className="relative h-[220vh]">

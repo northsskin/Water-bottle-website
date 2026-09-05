@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
 import { sectionProgress } from '../../scroll/scrollState.js'
 import { bottleRuntime } from '../runtime.js'
-import { GLASS, GLASS_FILL_MAX, glassInnerRadius, pourPhases } from '../pour.js'
+import { GLASS, glassInnerRadius, pourPhases } from '../pour.js'
 import { profilePoints } from '../bottleProfile.js'
 
 const damp = (delta, speed) => 1 - Math.exp(-speed * delta)
@@ -104,7 +104,7 @@ export default function Glass({ quality }) {
     [glassGeometry, liquidGeometry, surfaceGeometry, ringGeometry, liquidMaterial],
   )
 
-  const state = useRef({ fill: 0, ripple: [0.2, 0.55, 0.9] })
+  const state = useRef({ level: GLASS.floor, ripple: [0.2, 0.55, 0.9] })
 
   useFrame((frame, delta) => {
     const dt = Math.min(delta, 0.05)
@@ -122,14 +122,17 @@ export default function Glass({ quality }) {
     }
     if (!group.current?.visible) return
 
-    s.fill = THREE.MathUtils.lerp(s.fill, phases.glassFill, damp(dt, 6))
-    const level = GLASS.floor + (GLASS.height - GLASS.floor) * (s.fill / GLASS_FILL_MAX) * 0.98
+    // The level arrives already solved through the vessel's volume, so the
+    // glass gains exactly what the bottle loses. All that is left here is to
+    // damp the handover in and out of the section.
+    s.level = THREE.MathUtils.lerp(s.level, phases.glassLevel, damp(dt, 6))
+    const level = s.level
     clipPlane.constant = level
     // Single source of truth for where the water surface is: the stream and the
     // splash both land on it, and a second estimate elsewhere would drift.
     bottleRuntime.glassLevel = level - GLASS.floor
 
-    const hasWater = s.fill > 0.004
+    const hasWater = level > GLASS.floor + 0.002
     if (liquidRef.current) liquidRef.current.visible = hasWater
     if (surfaceRef.current) {
       surfaceRef.current.visible = hasWater

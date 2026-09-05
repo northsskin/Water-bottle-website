@@ -19,8 +19,11 @@ const UP = new THREE.Vector3(0, 1, 0)
  * That taper, plus a wobble that grows with distance from the lip, is most of
  * what separates "water pouring" from "a cylinder between two points".
  */
+const DROPS = 12
+
 export default function PourStream() {
   const meshRef = useRef()
+  const dropsRef = useRef()
 
   const geometry = useMemo(() => {
     const HEIGHT_SEGMENTS = 28
@@ -58,6 +61,14 @@ export default function PourStream() {
           '#include <begin_vertex>',
           `#include <begin_vertex>
            float travel = transformed.y;
+
+           // Volume pulses running down the stream. Real falling water is never
+           // a smooth cone; these travelling bulges are most of what stops it
+           // reading as a moulded object.
+           float pulse = sin(travel * 26.0 - uTime * 13.0) * 0.16
+                       + sin(travel * 41.0 - uTime * 19.0) * 0.09;
+           transformed.xz *= 1.0 + pulse * smoothstep(0.05, 0.5, travel);
+
            float amp = uWobble * travel * travel * 0.055;
            transformed.x += sin(travel * 19.0 - uTime * 11.0) * amp;
            transformed.z += cos(travel * 15.0 - uTime * 9.0) * amp;`,
@@ -83,11 +94,38 @@ export default function PourStream() {
     [geometry, material],
   )
 
+  const dropGeometry = useMemo(() => new THREE.IcosahedronGeometry(1, 0), [])
+  const dropMaterial = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color('#8ed4ee'),
+        emissive: new THREE.Color('#5ab6dc'),
+        emissiveIntensity: 0.35,
+        roughness: 0.05,
+        clearcoat: 1,
+      }),
+    [],
+  )
+  useEffect(
+    () => () => {
+      dropGeometry.dispose()
+      dropMaterial.dispose()
+    },
+    [dropGeometry, dropMaterial],
+  )
+
   const scratch = useMemo(
-    () => ({ target: new THREE.Vector3(), dir: new THREE.Vector3(), quat: new THREE.Quaternion() }),
+    () => ({
+      target: new THREE.Vector3(),
+      dir: new THREE.Vector3(),
+      quat: new THREE.Quaternion(),
+      point: new THREE.Vector3(),
+      dummy: new THREE.Object3D(),
+    }),
     [],
   )
   const width = useRef(0)
+  const clock = useRef(0)
 
   useFrame((_, delta) => {
     const dt = Math.min(delta, 0.05)
@@ -101,8 +139,11 @@ export default function PourStream() {
     material.userData.uniforms.uTime.value += dt
     width.current = THREE.MathUtils.lerp(width.current, engaged ? phases.flow : 0, 1 - Math.exp(-9 * dt))
 
+    clock.current += dt
+
     if (width.current < 0.01) {
       mesh.visible = false
+      if (dropsRef.current) dropsRef.current.visible = false
       return
     }
     mesh.visible = true

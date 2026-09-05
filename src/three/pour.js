@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { BOTTLE } from './bottleProfile.js'
+import { BOTTLE, fillHeight, innerRadius } from './bottleProfile.js'
 
 const smoothstep = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1)
@@ -22,6 +22,75 @@ export function glassInnerRadius(y) {
   return THREE.MathUtils.lerp(GLASS.rBottom, GLASS.rTop, t) - GLASS.wall
 }
 
+/**
+ * Cumulative volume of a lathed vessel, sampled up its height.
+ *
+ * Levels cannot simply be lerped between two heights if the water is supposed
+ * to be conserved: the bottle is a wide barrel and the glass is a narrow taper,
+ * so the same volume is a very different number of millimetres in each. Solving
+ * through volume is what makes the bottle's level fall at the rate the glass's
+ * level rises.
+ */
+function volumeTable(y0, y1, radiusFn, steps = 160) {
+  const heights = new Float64Array(steps + 1)
+  const volumes = new Float64Array(steps + 1)
+  const dy = (y1 - y0) / steps
+  let v = 0
+  for (let i = 0; i <= steps; i++) {
+    const y = y0 + dy * i
+    if (i > 0) {
+      const a = radiusFn(y - dy)
+      const b = radiusFn(y)
+      // Trapezoid on r², which is the exact integral for a linear radius.
+      v += Math.PI * ((a * a + b * b) / 2) * dy
+    }
+    heights[i] = y
+    volumes[i] = v
+  }
+  return { heights, volumes, total: v }
+}
+
+function volumeAtHeight(table, y) {
+  const { heights, volumes } = table
+  if (y <= heights[0]) return 0
+  const last = heights.length - 1
+  if (y >= heights[last]) return volumes[last]
+  const span = (heights[last] - heights[0]) / last
+  const i = Math.min(Math.floor((y - heights[0]) / span), last - 1)
+  const t = (y - heights[i]) / (heights[i + 1] - heights[i])
+  return THREE.MathUtils.lerp(volumes[i], volumes[i + 1], t)
+}
+
+function heightAtVolume(table, volume) {
+  const { heights, volumes } = table
+  const last = volumes.length - 1
+  if (volume <= 0) return heights[0]
+  if (volume >= volumes[last]) return heights[last]
+  let lo = 0
+  let hi = last
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1
+    if (volumes[mid] > volume) hi = mid
+    else lo = mid
+  }
+  const t = (volume - volumes[lo]) / (volumes[hi] - volumes[lo] || 1)
+  return THREE.MathUtils.lerp(heights[lo], heights[hi], t)
+}
+
+/** How full the glass ends up. Declared before the tables that consume it. */
+export const GLASS_FILL_MAX = 0.78
+
+const BOTTLE_VOLUME = volumeTable(BOTTLE.fillMin, BOTTLE.fillMax, innerRadius)
+const GLASS_VOLUME = volumeTable(GLASS.floor, GLASS.height, glassInnerRadius)
+
+/** Level the bottle starts the pour at, and how much of it leaves. */
+const START_FILL = 0.72
+const START_VOLUME = volumeAtHeight(BOTTLE_VOLUME, fillHeight(START_FILL))
+const POURED_SHARE = 0.92
+/** The glass is far smaller than 750 ml, so the transfer is scaled to fit it. */
+const TRANSFER =
+  (GLASS_VOLUME.total * GLASS_FILL_MAX) / (START_VOLUME * POURED_SHARE)
+
 export const MAX_TILT = 1.0 // ~57 degrees, where a real bottle actually pours
 
 /**
@@ -31,7 +100,6 @@ export const MAX_TILT = 1.0 // ~57 degrees, where a real bottle actually pours
  * and toppling over.
  */
 export const MOUTH_TARGET = new THREE.Vector3(GLASS.x - 0.2, GLASS.height + 0.62, 0)
-export const GLASS_FILL_MAX = 0.78
 
 /**
  * One choreography for the whole pour, so the bottle, the cap, the stream, the
@@ -44,20 +112,39 @@ export const GLASS_FILL_MAX = 0.78
  * it look like liquid with momentum rather than a level being set.
  */
 export function pourPhases(p) {
-  const glassIn = smoothstep(0.0, 0.12, p)
-  const capOff = smoothstep(0.06, 0.2, p) * (1 - smoothstep(0.82, 0.94, p))
-  const tilt = smoothstep(0.14, 0.32, p) * (1 - smoothstep(0.72, 0.86, p))
-  const flow = smoothstep(0.28, 0.36, p) * (1 - smoothstep(0.68, 0.74, p))
+  const glassIn = smoothstep(0.0, 0.1, p)
+  // Beats, in order, each with room to be watched: the glass arrives, the cap
+  // comes off, the bottle tips, then it pours. The cap is fully clear before
+  // the tilt starts — overlapping the two made the cap tip along with the
+  // bottle, which is what read as it sliding around inside the neck.
+  const capOff = smoothstep(0.05, 0.24, p) * (1 - smoothstep(0.86, 0.96, p))
+  const tilt = smoothstep(0.28, 0.44, p) * (1 - smoothstep(0.74, 0.88, p))
+  const flow = smoothstep(0.4, 0.47, p) * (1 - smoothstep(0.72, 0.78, p))
+
+  // One driver for both vessels. The glass runs very slightly behind the bottle
+  // because the water it is gaining is still in the air.
+  const poured = smoothstep(0.42, 0.76, p)
+  const landed = smoothstep(0.45, 0.79, p)
+
+  const leftInBottle = START_VOLUME * (1 - poured * POURED_SHARE)
+  const gainedByGlass = START_VOLUME * landed * POURED_SHARE * TRANSFER
+
+  const bottleLevel = heightAtVolume(BOTTLE_VOLUME, leftInBottle)
+  const glassLevel = heightAtVolume(GLASS_VOLUME, gainedByGlass)
 
   return {
     glassIn,
     capOff,
     tilt,
     flow,
-    /** Bottle level: drains only. It is pouring, not cycling. */
-    bottleFill: THREE.MathUtils.lerp(0.72, 0.04, smoothstep(0.3, 0.72, p)),
-    /** Glass level, lagging the stream slightly at both ends. */
-    glassFill: smoothstep(0.33, 0.78, p) * GLASS_FILL_MAX,
+    /** Back into the 0–1 domain the fill slider and the clipping plane use. */
+    bottleFill: THREE.MathUtils.clamp(
+      (bottleLevel - BOTTLE.fillMin) / (BOTTLE.fillMax - BOTTLE.fillMin),
+      0,
+      1,
+    ),
+    /** Height of the water surface in the glass, in glass-local space. */
+    glassLevel,
   }
 }
 

@@ -101,7 +101,11 @@ Details worth knowing:
 ### The set pieces
 
 Two sections pin (`position: sticky` inside a 220vh runway) and scrub their
-animation against their own progress:
+animation against their own progress — measured across the *pinned* window
+(`['start start', 'end end']`), not the whole travel through the viewport. With
+the default range, progress 0→1 spans the section entering and leaving, so most
+of a set piece plays while it is still sliding into view and the opening beats
+are over before the card ever pins.
 
 - **Exploded cap** (`parts/CapAssembly.jsx`) — crown, gasket and pull ring come
   apart by different distances while the crown unscrews, hold, then reseat. Each
@@ -120,11 +124,22 @@ animation against their own progress:
   InstancedMesh of ballistic droplets that respawn at the impact point, so it
   sustains while water lands rather than firing once.
 
+  Both levels are solved through **volume**, not height. The bottle is a wide
+  barrel and the glass a narrow taper, so the same volume is a very different
+  number of millimetres in each; lerping heights independently makes the water
+  appear and disappear rather than move. `pour.js` integrates π r² dy up each
+  vessel once, then converts a single "poured" driver into a height in each
+  through those tables. The glass runs a fraction behind the bottle, because the
+  water it is gaining is still in the air.
+
   Pivoting about the lip rather than the base is the whole trick: rotating a
   22cm bottle about its base swings the mouth a metre sideways and reads as
   toppling over. The pour staging also sits *above* the spin in the hierarchy —
   below it, the page's scroll-driven rotation turns the staging itself and walks
-  the lip off the glass mid-pour.
+  the lip off the glass mid-pour. For the same reason the cap's exit offset is
+  authored in view space and then un-spun before it is applied: it lives inside
+  the rotation, so "towards the camera" becomes "behind the bottle" once the
+  page has turned the bottle 150°.
 
 ### The opening
 

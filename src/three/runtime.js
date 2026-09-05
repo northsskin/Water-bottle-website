@@ -11,6 +11,8 @@ export const bottleRuntime = {
   scale: 1,
   /** Current tilt of the bottle in radians, 0 upright. */
   tilt: 0,
+  /** Current Y rotation of the bottle, in radians. */
+  spin: 0,
   /** World position of the lip, after spin, tilt and capacity scale. */
   mouth: new THREE.Vector3(0, 2, 0),
   /** Height of the water inside the glass, above the glass floor. */

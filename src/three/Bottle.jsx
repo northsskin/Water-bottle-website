@@ -60,6 +60,9 @@ export default function Bottle({ isMobile = false, reducedMotion = false, qualit
       spinGroup.current.rotation.y = reducedMotion
         ? spin
         : THREE.MathUtils.lerp(current, spin, damp(dt, 7))
+      // Published so parts nested under the spin can move in view space rather
+      // than in the bottle's own rotating frame.
+      bottleRuntime.spin = spinGroup.current.rotation.y
     }
 
     // --- pouring -----------------------------------------------------------
