@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
+  // Relative asset URLs, so the build works wherever it is served from — the
+  // domain root, a GitHub Pages project sub-path
+  // (user.github.io/Water-bottle-website/), or a custom domain — without
+  // hardcoding the repository name. The page has no client-side routing, so
+  // there is nothing that needs an absolute base.
+  base: './',
   plugins: [react(), tailwindcss()],
   build: {
     rollupOptions: {

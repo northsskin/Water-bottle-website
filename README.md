@@ -104,6 +104,17 @@ and shortens the scroll reveals.
 
 A `SceneBoundary` error boundary keeps the page usable if WebGL is unavailable.
 
+## Deployment
+
+`.github/workflows/deploy.yml` builds the site and publishes `dist/` to GitHub
+Pages. **Set Settings → Pages → Source to "GitHub Actions"** — the default
+"Deploy from a branch" publishes the repository as-is, which hands the browser
+`src/main.jsx` as raw JSX and renders a blank page.
+
+`base` is `'./'`, so the build is location-agnostic: it works at a domain root,
+at a project sub-path like `user.github.io/Water-bottle-website/`, or behind a
+custom domain, with no repository name hardcoded anywhere.
+
 ## Notes
 
 Content, pricing and brand are invented for the demo; the "Add to cart" buttons
