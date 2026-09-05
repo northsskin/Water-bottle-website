@@ -3,21 +3,38 @@ import { useInView, useReducedMotion } from 'framer-motion'
 
 /**
  * Counts a stat up when it scrolls into view, preserving whatever prefix or
- * suffix the source string carries ("24 h", "68 mm", "90%", "1/4").
+ * suffix the source string carries ("24 h", "68 mm", "90%").
  *
- * Strings with no leading number are rendered untouched, so the same component
- * can wrap every stat without the caller having to care.
+ * Two things keep it from reading as a flicker. It only ever shows about a
+ * dozen values — updating every frame turns "68 mm" into an unreadable blur of
+ * digits — and it eases out hard, so most of the count is over quickly and it
+ * settles on the real number rather than crawling towards it.
+ *
+ * Strings with no leading number, or numbers small enough that counting is
+ * silly ("1/4 turn" spends most of the animation reading "0/4"), are rendered
+ * untouched.
  */
+const STEPS = 12
+// Starts a little over half way rather than at zero. Counting "68 mm" up from
+// nothing spends its first frames reading "0 mm" and "2 mm", which is what the
+// old version looked like it was doing — a number churning, not a stat landing.
+const START = 0.55
+const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4)
+
 export default function CountUp({ value, duration = 1.1, className = '' }) {
   const ref = useRef(null)
   const inView = useInView(ref, { once: true, margin: '-15% 0px' })
   const reduced = useReducedMotion()
 
   const parsed = String(value).match(/^(\D*)(\d+(?:\.\d+)?)(.*)$/s)
-  // Only count things that read as quantities. "1/4 turn" counting up from zero
-  // spends most of the animation showing "0/4", which is simply wrong.
   const match = parsed && parseFloat(parsed[2]) >= 10 ? parsed : null
-  const [display, setDisplay] = useState(() => (match && !reduced ? `${match[1]}0${match[3]}` : value))
+
+  const [display, setDisplay] = useState(() => {
+    if (!match || reduced) return value
+    const seed = parseFloat(match[2]) * START
+    const decimals = (match[2].split('.')[1] ?? '').length
+    return `${match[1]}${seed.toFixed(decimals)}${match[3]}`
+  })
 
   useEffect(() => {
     if (!match || reduced) {
@@ -29,17 +46,17 @@ export default function CountUp({ value, duration = 1.1, className = '' }) {
     const [, prefix, digits, suffix] = match
     const end = parseFloat(digits)
     const decimals = (digits.split('.')[1] ?? '').length
-    const start = performance.now()
-    let frame = 0
 
-    const tick = (now) => {
-      const t = Math.min((now - start) / (duration * 1000), 1)
-      const eased = 1 - Math.pow(1 - t, 3)
-      setDisplay(`${prefix}${(end * eased).toFixed(decimals)}${suffix}`)
-      if (t < 1) frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
+    let step = 0
+    const id = setInterval(() => {
+      step += 1
+      const t = step / STEPS
+      const shown = step >= STEPS ? end : end * (START + (1 - START) * easeOutQuart(t))
+      setDisplay(`${prefix}${shown.toFixed(decimals)}${suffix}`)
+      if (step >= STEPS) clearInterval(id)
+    }, (duration * 1000) / STEPS)
+
+    return () => clearInterval(id)
   }, [inView, value, duration, reduced, match])
 
   return (

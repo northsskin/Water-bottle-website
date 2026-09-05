@@ -3,7 +3,8 @@ import { useFrame } from '@react-three/fiber'
 import { Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { sectionProgress } from '../../scroll/scrollState.js'
-import { introRuntime } from '../runtime.js'
+import { bottleRuntime, introRuntime } from '../runtime.js'
+import { pourPhases } from '../pour.js'
 import { BOTTLE, capRadius, profilePoints } from '../bottleProfile.js'
 
 const smoothstep = (a, b, x) => {
@@ -60,6 +61,7 @@ function Callout({ part, y, opacityRef }) {
 }
 
 export default function CapAssembly({ showLabels = true }) {
+  const root = useRef()
   const crownLift = useRef()
   const crownSpin = useRef()
   const gasketLift = useRef()
@@ -75,21 +77,38 @@ export default function CapAssembly({ showLabels = true }) {
   useFrame(() => {
     // During the opening the very same rig runs backwards: the cap starts lifted
     // and unscrewed, then descends and seats as the intro clock reaches 1.
+    // Three things drive this one rig: the opening runs it backwards, the cap
+    // section explodes it, and the pour lifts the cap clear so there is a mouth
+    // to pour out of. Whichever wants the parts furthest apart wins.
+    const pour = sectionProgress('pour')
+    const pouring = pour > 0.0005 && pour < 0.9995
+    const pourLift = pouring ? pourPhases(pour).capOff : 0
     const t = introRuntime.active
       ? 1 - introRuntime.t * introRuntime.t
-      : explodeAmount(sectionProgress('cap'))
+      : Math.max(explodeAmount(sectionProgress('cap')), pourLift)
 
     if (crownLift.current) crownLift.current.position.y = t * 0.34
     if (crownSpin.current) crownSpin.current.rotation.y = -t * 2.4
     if (ringLift.current) ringLift.current.position.y = t * 0.6
     if (gasketLift.current) gasketLift.current.position.y = t * 0.16
 
+    // The cap unscrews, then shrinks away as the bottle tips: parts lift along
+    // the bottle's own axis, so a cap left visible at 57 degrees flies off into
+    // the corner of frame instead of reading as set aside.
+    if (root.current) {
+      const put = 1 - THREE.MathUtils.clamp(bottleRuntime.tilt / 0.5, 0, 1)
+      root.current.scale.setScalar(put)
+      root.current.visible = put > 0.02
+    }
+
     // Labels arrive only once the parts have actually separated, so they never
-    // sit on top of an assembled cap — and never during the opening, which
-    // shares this rig but is a product shot, not a diagram.
-    const opacity = introRuntime.active
-      ? '0'
-      : String(THREE.MathUtils.clamp((t - 0.4) / 0.35, 0, 1))
+    // sit on top of an assembled cap — never during the opening, which shares
+    // this rig but is a product shot, and never during the pour, where the cap
+    // is being removed rather than explained.
+    const opacity =
+      introRuntime.active || pouring
+        ? '0'
+        : String(THREE.MathUtils.clamp((t - 0.4) / 0.35, 0, 1))
     for (const part of PARTS) {
       const el = labels.current[part.id]
       if (el) el.style.opacity = opacity
@@ -97,7 +116,7 @@ export default function CapAssembly({ showLabels = true }) {
   })
 
   return (
-    <group>
+    <group ref={root}>
       <group ref={crownLift}>
         <group ref={crownSpin}>
           <mesh geometry={capGeometry} castShadow>

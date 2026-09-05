@@ -4,6 +4,7 @@ import * as THREE from 'three'
 import { useConfig } from '../../store.js'
 import { scrollState, sectionProgress } from '../../scroll/scrollState.js'
 import { bottleRuntime, introRuntime } from '../runtime.js'
+import { pourPhases } from '../pour.js'
 import { BOTTLE, fillHeight, innerRadius, profilePoints } from '../bottleProfile.js'
 
 const damp = (delta, speed) => 1 - Math.exp(-speed * delta)
@@ -16,18 +17,6 @@ const UP = new THREE.Vector3(0, 1, 0)
 const DOWN = new THREE.Vector3(0, -1, 0)
 const X_AXIS = new THREE.Vector3(1, 0, 0)
 const Z_AXIS = new THREE.Vector3(0, 0, 1)
-
-/**
- * The pour beat: drain, then refill past where it started.
- *
- * Emptying first is what makes the refill land — you cannot appreciate a rising
- * waterline if it was already near the top when the section began.
- */
-function pourLevel(p) {
-  const drain = smoothstep(0.08, 0.38, p)
-  const refill = smoothstep(0.46, 0.86, p)
-  return THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.72, 0.04, drain), 1, refill)
-}
 
 export default function Liquid({ reducedMotion = false }) {
   const meshRef = useRef()
@@ -150,7 +139,7 @@ export default function Liquid({ reducedMotion = false }) {
       // under and enough light to see it.
       target = config.fill * smoothstep(0.4, 0.95, introRuntime.t)
     } else {
-      target = engaged ? pourLevel(p) : config.fill
+      target = engaged ? pourPhases(p).bottleFill : config.fill
     }
     s.fill = THREE.MathUtils.lerp(s.fill, target, damp(dt, engaged || introRuntime.active ? 9 : 4))
 
@@ -179,7 +168,10 @@ export default function Liquid({ reducedMotion = false }) {
     scratch.point.set(0, surfaceY, 0)
     clipPlane.setFromNormalAndCoplanarPoint(scratch.normal, scratch.point)
 
-    const visible = s.fill > 0.015
+    // At fill 0 the clipping plane sits on the floor of the liquid volume, so
+    // there is nothing left to draw and nothing to hide. The epsilon only skips
+    // the draw call once the level is genuinely gone.
+    const visible = s.fill > 0.0008
     if (meshRef.current) meshRef.current.visible = visible
 
     if (surfaceRef.current) {
@@ -190,7 +182,11 @@ export default function Liquid({ reducedMotion = false }) {
       scratch.quat.setFromUnitVectors(UP, scratch.normal.clone().negate())
       surfaceRef.current.quaternion.copy(scratch.quat)
       surfaceRef.current.scale.set(r, r, r)
-      surfaceRef.current.visible = visible
+      // The disc is a flat lid on the water. That reads correctly upright, but
+      // once the bottle is tipped the real surface is an ellipse cut across a
+      // slanted cylinder, so it is faded out rather than left lying at the
+      // wrong angle — the clipped volume alone is correct in world space.
+      surfaceRef.current.visible = visible && bottleRuntime.tilt < 0.16
     }
   })
 

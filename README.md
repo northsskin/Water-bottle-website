@@ -107,10 +107,24 @@ animation against their own progress:
   apart by different distances while the crown unscrews, hold, then reseat. Each
   callout is parented to its part so labels track rather than point at where a
   piece used to be. The opening sequence drives the same rig backwards.
-- **Pour** (`parts/Liquid.jsx`) — the level drains then refills past where it
-  started, and the clipping plane's *normal* is sprung off scroll velocity, so
-  the waterline tilts and rocks back. The surface disc reorients into the plane,
-  because a tilted waterline with a flat lid inside it looks wrong immediately.
+- **Pour** (`pour.js`, `PourScene.jsx`) — the cap lifts clear, the bottle tips
+  about *its own lip* and carries it over a tumbler, and water falls into the
+  glass while the bottle drains and the glass fills. One choreography in
+  `pour.js` drives the bottle, the cap, the stream, the glass and the splash, so
+  they cannot disagree about whether water is currently in the air.
+
+  The stream is a canonical tube built once and aimed each frame — rebuilding a
+  TubeGeometry per frame would cost more than the rest of the scene. Its profile
+  narrows towards the bottom because a falling stream accelerates and the same
+  volume per second has to fit through less cross-section. The splash is one
+  InstancedMesh of ballistic droplets that respawn at the impact point, so it
+  sustains while water lands rather than firing once.
+
+  Pivoting about the lip rather than the base is the whole trick: rotating a
+  22cm bottle about its base swings the mouth a metre sideways and reads as
+  toppling over. The pour staging also sits *above* the spin in the hierarchy —
+  below it, the page's scroll-driven rotation turns the staging itself and walks
+  the lip off the glass mid-pour.
 
 ### The opening
 

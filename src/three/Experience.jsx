@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber'
 import { ContactShadows, Environment, Lightformer, PerformanceMonitor } from '@react-three/drei'
 import Backdrop from './Backdrop.jsx'
 import Bottle from './Bottle.jsx'
+import PourScene from './PourScene.jsx'
 import CameraRig from './CameraRig.jsx'
 import Intro from './Intro.jsx'
 import Effects from './Effects.jsx'
@@ -79,15 +80,18 @@ function Scene({ isMobile, reducedMotion, quality, introDone, skipIntro, onIntro
       <pointLight position={[0, 1.2, -3.5]} intensity={9} distance={10} decay={2} color="#ffd9b8" />
 
       <Bottle isMobile={isMobile} reducedMotion={reducedMotion} quality={quality} />
+      <PourScene quality={quality} reducedMotion={reducedMotion} />
 
       {quality.caustics && !reducedMotion ? <CausticsFloor /> : null}
 
+      {/* Tight area, dense map: the old 7-unit spread at 256px gave ~27mm per
+          texel, which read as blotches rather than a shadow. */}
       <ContactShadows
         position={[0, 0.001, 0]}
-        opacity={0.5}
-        scale={7}
-        blur={2.2}
-        far={3.2}
+        opacity={0.42}
+        scale={5}
+        blur={3.6}
+        far={2.8}
         resolution={quality.shadowResolution}
         color="#1d2733"
         frames={quality.shadowFrames}

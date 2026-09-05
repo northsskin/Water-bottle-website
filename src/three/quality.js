@@ -15,10 +15,11 @@ export const TIERS = {
     bloom: true,
     depthOfField: true,
     caustics: true,
+    splash: true,
     transmission: true,
     transmissionScale: 1,
     labels: true,
-    shadowResolution: 512,
+    shadowResolution: 1024,
     shadowFrames: Infinity,
   },
   medium: {
@@ -27,10 +28,11 @@ export const TIERS = {
     bloom: true,
     depthOfField: false,
     caustics: false,
+    splash: true,
     transmission: true,
     transmissionScale: 0.7,
     labels: true,
-    shadowResolution: 256,
+    shadowResolution: 512,
     shadowFrames: Infinity,
   },
   low: {
@@ -39,6 +41,7 @@ export const TIERS = {
     bloom: false,
     depthOfField: false,
     caustics: false,
+    splash: false,
     // Transmission forces an extra full-scene render every frame, and it is
     // easily the most expensive thing here — but switching it off costs the
     // liquid, which is the whole product. Render that pass at a quarter of the
@@ -47,7 +50,7 @@ export const TIERS = {
     transmission: true,
     transmissionScale: 0.5,
     labels: false,
-    shadowResolution: 256,
+    shadowResolution: 512,
     shadowFrames: 1,
   },
 }

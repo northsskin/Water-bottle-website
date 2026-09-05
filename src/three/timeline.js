@@ -51,14 +51,18 @@ export const KEYFRAMES = [
   },
   {
     id: 'pour',
-    // Wide enough to hold the whole column: the point of this beat is watching
-    // a level travel the full height of the bottle.
-    position: [1.15, 1.95, 5.0],
-    target: [0, 1.12, 0],
-    fov: 34,
-    offset: 0.22,
+    // Framed on the pair, not the bottle: the tipped bottle rises and moves
+    // right while the glass sits at x = 0.98, so the shot is centred between
+    // them and pulled back enough to hold the stream in the air.
+    position: [1.3, 1.75, 6.6],
+    target: [0.28, 0.82, 0],
+    fov: 36,
+    offset: 0.17,
     spin: 2.75,
-    mobile: { position: [0.2, 1.7, 6.3], target: [0, 0.55, 0] },
+    // A phone cannot hold the whole tableau — fitting 2.8 units of width would
+    // shrink it to nothing — so it frames the pour itself, lip to glass, and
+    // lets the bottle body run out of frame.
+    mobile: { position: [0.95, 1.1, 4.9], target: [0.85, 0.45, 0] },
   },
   {
     id: 'eco',

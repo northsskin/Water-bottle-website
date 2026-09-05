@@ -22,7 +22,10 @@ export const BOTTLE = {
   labelCenter: 0.95,
   labelHeight: 0.54,
 
-  fillMin: 0.07,
+  // Empty has to mean empty: the liquid lathe starts at `wall`, so a fillMin
+  // above it left a sliver of water at 0% that could only be removed by hiding
+  // the mesh — which is exactly the snap between 1% and 0%.
+  fillMin: 0.038,
   fillMax: 1.7,
 }
 
