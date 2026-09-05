@@ -107,9 +107,19 @@ A `SceneBoundary` error boundary keeps the page usable if WebGL is unavailable.
 ## Deployment
 
 `.github/workflows/deploy.yml` builds the site and publishes `dist/` to GitHub
-Pages. **Set Settings → Pages → Source to "GitHub Actions"** — the default
-"Deploy from a branch" publishes the repository as-is, which hands the browser
-`src/main.jsx` as raw JSX and renders a blank page.
+Pages.
+
+**One manual step is required: set Settings → Pages → Source to "GitHub
+Actions."** "Deploy from a branch" publishes the repository as-is, which hands
+the browser `src/main.jsx` as raw JSX and renders a blank page. Worse, that
+pipeline keeps running *alongside* this workflow on every push, and whichever
+finishes last is what visitors get — so the site flips between working and
+blank at random. Only a repo admin can change this: the Actions token is
+refused (403) on the Pages config endpoint, so the workflow can only warn.
+
+Until it is switched, the deploy job sleeps 90s so the branch pipeline finishes
+first and this build is the one that survives. **Delete that step once the
+source is set to GitHub Actions** — it is a stopgap, not a design.
 
 `base` is `'./'`, so the build is location-agnostic: it works at a domain root,
 at a project sub-path like `user.github.io/Water-bottle-website/`, or behind a

@@ -42,16 +42,19 @@ jobs:
 
       - run: npm run build
 
-      # While the Pages source is "deploy from a branch", GitHub's built-in
-      # Jekyll pipeline ALSO runs on every push and races this workflow. It
-      # republishes the repository as-is, so whenever it finishes second the
-      # site reverts to raw source and goes blank. Pointing the source at this
-      # workflow retires that pipeline instead of racing it.
-      - name: Point Pages at this workflow
+      # While the Pages source is a branch, GitHub's built-in Jekyll pipeline
+      # ALSO publishes on every push, republishing the repository as-is — and
+      # whichever finishes last wins, so the site randomly reverts to raw
+      # source and goes blank. Only a repo admin can change the source: the
+      # Actions token gets 403 on the Pages config endpoint, so this reports
+      # the problem rather than pretending to fix it.
+      - name: Check the Pages source
         run: |
-          gh api -X PUT "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow \
-            || gh api -X POST "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow \
-            || echo "::warning::Could not set the Pages source. Set Settings → Pages → Source to 'GitHub Actions' by hand, or the branch pipeline will keep overwriting this deployment."
+          build_type=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || echo unknown)
+          echo "Pages build_type: $build_type"
+          if [ "$build_type" != "workflow" ]; then
+            echo "::warning::Pages Source is '$build_type', not GitHub Actions, so GitHub's branch pipeline is publishing raw source over this build. Fix it at Settings → Pages → Source → GitHub Actions, then delete the 'Let the branch pipeline go first' step from this workflow."
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -68,5 +71,13 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # TEMPORARY — delete once Settings → Pages → Source is "GitHub Actions".
+      # Until then GitHub's branch pipeline publishes the raw source on this
+      # same push and the last writer wins. That coin flip has already blanked
+      # the site once (it finished 12s after this deploy). Letting it go first
+      # makes this build the one that survives.
+      - name: Let the branch pipeline go first
+        run: sleep 90
+
       - id: deployment
         uses: actions/deploy-pages@v4
