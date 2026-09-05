@@ -7,7 +7,7 @@ no HDRI download, and no image asset anywhere in the project.
 ```bash
 npm install
 npm run dev      # http://localhost:5173
-npm run build    # -> dist/
+npm run build    # -> docs/  (committed; see Deployment)
 npm run preview
 ```
 
@@ -198,24 +198,38 @@ hides behind vsync until the moment it collapses.
 
 ## Deployment
 
-`.github/workflows/deploy.yml` builds the site and publishes `dist/` to GitHub
-Pages.
+Pages serves this repository **from a branch, folder `/docs`**, so the build
+output is committed: `npm run build` writes to `docs/`, and that directory *is*
+the published site. `.github/workflows/deploy.yml` rebuilds on every push and
+commits `docs/` back if it drifted from the source.
 
-**One manual step is required: set Settings → Pages → Source to "GitHub
-Actions."** "Deploy from a branch" publishes the repository as-is, which hands
-the browser `src/main.jsx` as raw JSX and renders a blank page. Worse, that
-pipeline keeps running *alongside* this workflow on every push, and whichever
-finishes last is what visitors get — so the site flips between working and
-blank at random. Only a repo admin can change this: the Actions token is
-refused (403) on the Pages config endpoint, so the workflow can only warn.
+This shape was arrived at the hard way. A branch-served Pages site publishes the
+repository as-is and cannot build a Vite app, so it handed the browser
+`src/main.jsx` as raw JSX and rendered a blank page. Publishing `dist/` from a
+workflow instead requires Settings → Pages → Source to be "GitHub Actions", and
+nothing in a workflow can set that — the Actions token gets a 403 on the Pages
+config endpoint, and only a repo admin can click it. Worse, while the source is
+a branch, *both* pipelines publish on every push and the last writer wins, so the
+site flipped between working and blank at random.
 
-Until it is switched, the deploy job sleeps 90s so the branch pipeline finishes
-first and this build is the one that survives. **Delete that step once the
-source is set to GitHub Actions** — it is a stopgap, not a design.
+Putting the build in the repository ends that: whichever pipeline runs, the thing
+it publishes is the built site. Two details make it work —
 
-`base` is `'./'`, so the build is location-agnostic: it works at a domain root,
-at a project sub-path like `user.github.io/Water-bottle-website/`, or behind a
-custom domain, with no repository name hardcoded anywhere.
+- **`docs/.nojekyll`** (copied from `public/`) turns Jekyll off, so Pages copies
+  the files across instead of trying to render them. Without it, Jekyll skips
+  every directory beginning with an underscore and mangles the rest.
+- **`base` is `'./'`**, so the build is location-agnostic: it works at a domain
+  root, at a project sub-path like `user.github.io/Water-bottle-website/`, or
+  behind a custom domain, with no repository name hardcoded anywhere.
+
+If you ever do switch the source to "GitHub Actions", nothing breaks — `docs/`
+is just an ordinary directory then, and the workflow can go back to uploading it
+as a Pages artifact.
+
+**Committing build output is not normally good practice**, and it is worth being
+plain about why it is here: a branch-served Pages site has no build step, so the
+artifact has to live in the repo or there is no site. The workflow's rebuild-and-
+commit step is what keeps it honest — `docs/` cannot silently fall behind `src/`.
 
 ## Notes
 

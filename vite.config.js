@@ -11,6 +11,13 @@ export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss()],
   build: {
+    // The built site lives in docs/ and is committed, because GitHub Pages is
+    // serving this repository from a branch. A branch-served Pages site
+    // publishes whatever is in the repo, so the *build output* has to be in the
+    // repo — otherwise the browser is handed src/main.jsx as raw JSX. `/docs`
+    // is the one sub-directory Pages will serve, so that is where it goes.
+    outDir: 'docs',
+    emptyOutDir: true,
     rollupOptions: {
       output: {
         // Keep the (large) 3D stack in its own chunk so the page shell paints

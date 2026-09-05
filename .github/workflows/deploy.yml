@@ -1,11 +1,16 @@
-name: Deploy to GitHub Pages
+name: Build the site into docs/
 
-# GitHub Pages cannot build a Vite app on its own — the "deploy from a branch"
-# setting publishes the repository as-is, which serves src/main.jsx to the
-# browser as raw JSX and renders a blank page. This workflow builds first and
-# publishes dist/ instead.
+# GitHub Pages is serving this repository from a branch, which publishes the
+# repo as-is — it cannot build a Vite app. Handing the browser src/main.jsx as
+# raw JSX is what rendered a blank page.
 #
-# Set Settings → Pages → Source to "GitHub Actions" for this to take effect.
+# So the build output is committed instead: `npm run build` writes to docs/,
+# which is the one sub-directory Pages will serve, and this workflow keeps it
+# in step with the source on every push. docs/.nojekyll (copied from public/)
+# turns Jekyll off, so Pages just copies the files across.
+#
+# This means no manual settings change is required, and there is no longer a
+# race between two publishers: whatever is in docs/ is the site.
 
 on:
   push:
@@ -14,18 +19,18 @@ on:
       - main
       - master
       - claude/new-session-uc1tl6
+    # Without this, committing docs/ below would retrigger this workflow.
+    paths-ignore:
+      - 'docs/**'
   workflow_dispatch:
 
-# Allow the workflow to mint a Pages deployment token.
+# Needed to push the rebuilt docs/ back to the branch.
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Let a running deployment finish rather than cancelling it mid-publish.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -42,42 +47,18 @@ jobs:
 
       - run: npm run build
 
-      # While the Pages source is a branch, GitHub's built-in Jekyll pipeline
-      # ALSO publishes on every push, republishing the repository as-is — and
-      # whichever finishes last wins, so the site randomly reverts to raw
-      # source and goes blank. Only a repo admin can change the source: the
-      # Actions token gets 403 on the Pages config endpoint, so this reports
-      # the problem rather than pretending to fix it.
-      - name: Check the Pages source
+      # Normally a no-op: docs/ is committed alongside the source it was built
+      # from, so this only fires if someone pushed a source change without
+      # rebuilding. Untracked files count, since a new hashed chunk filename is
+      # a new file rather than a modification.
+      - name: Commit docs/ if it drifted from the source
         run: |
-          build_type=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || echo unknown)
-          echo "Pages build_type: $build_type"
-          if [ "$build_type" != "workflow" ]; then
-            echo "::warning::Pages Source is '$build_type', not GitHub Actions, so GitHub's branch pipeline is publishing raw source over this build. Fix it at Settings → Pages → Source → GitHub Actions, then delete the 'Let the branch pipeline go first' step from this workflow."
+          if [ -z "$(git status --porcelain -- docs)" ]; then
+            echo "docs/ already matches the source — nothing to publish."
+            exit 0
           fi
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      # TEMPORARY — delete once Settings → Pages → Source is "GitHub Actions".
-      # Until then GitHub's branch pipeline publishes the raw source on this
-      # same push and the last writer wins. That coin flip has already blanked
-      # the site once (it finished 12s after this deploy). Letting it go first
-      # makes this build the one that survives.
-      - name: Let the branch pipeline go first
-        run: sleep 90
-
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs
+          git commit -m "Rebuild docs/ from ${GITHUB_SHA:0:7}"
+          git push
