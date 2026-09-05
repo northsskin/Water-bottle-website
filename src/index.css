@@ -23,7 +23,9 @@
 
 @layer base {
   html {
-    scroll-behavior: smooth;
+    /* No `scroll-behavior: smooth` here on purpose: Lenis sets scroll position
+       itself every frame, and native smooth scrolling fights it for control of
+       the same value. Reduced motion turns Lenis off and gets it back below. */
     -webkit-text-size-adjust: 100%;
   }
 
@@ -41,9 +43,11 @@
     color: white;
   }
 
+  /* Lenis is not constructed under reduced motion, so native smooth anchor
+     scrolling is free to take over. */
   @media (prefers-reduced-motion: reduce) {
     html {
-      scroll-behavior: auto;
+      scroll-behavior: smooth;
     }
   }
 }

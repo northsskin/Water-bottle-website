@@ -16,5 +16,42 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!--
+      Safety net for a misconfigured deploy. This file is the *source* HTML: a
+      real build rewrites the script above to the bundled entry, so the handler
+      below can never match. It only fires when the repository is served as-is
+      — which is what GitHub Pages does when its Source is a branch rather than
+      GitHub Actions — and the browser is handed raw JSX it cannot execute.
+      Without this, that failure is a silent blank page.
+
+      Listens on window in the capture phase rather than on the element: Vite
+      drops attributes like id when it rewrites the tag, so there is nothing
+      stable to look the script up by.
+    -->
+    <script>
+      window.addEventListener(
+        'error',
+        function (event) {
+          var el = event.target
+          if (!el || el.tagName !== 'SCRIPT' || !/\/src\/main\.jsx/.test(el.src || '')) return
+          document.getElementById('root').innerHTML = [
+            '<div style="min-height:100svh;display:flex;align-items:center;justify-content:center;',
+            'padding:24px;font:15px/1.6 system-ui,sans-serif;color:#3f434a;background:#f4f2ed">',
+            '<div style="max-width:34rem">',
+            '<p style="font:600 11px/1 system-ui;letter-spacing:.18em;text-transform:uppercase;',
+            'color:#0a6260;margin:0 0 16px">Deployment not built</p>',
+            '<h1 style="font-size:28px;line-height:1.2;color:#14161a;margin:0 0 12px;font-weight:500">',
+            'This is the source, not the site.</h1>',
+            '<p style="margin:0 0 12px">GitHub Pages is publishing the repository as-is, so the ',
+            'browser was handed raw JSX it cannot run.</p>',
+            '<p style="margin:0">Fix: repository <b>Settings &rarr; Pages &rarr; Source</b>, ',
+            'set it to <b>GitHub Actions</b>. The build workflow is already in the repo.</p>',
+            '</div></div>',
+          ].join('')
+        },
+        true,
+      )
+    </script>
   </body>
 </html>

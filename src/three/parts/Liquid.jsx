@@ -161,7 +161,11 @@ export default function Liquid({ reducedMotion = false }) {
       s.tilt = 0
       s.tiltVelocity = 0
     } else {
-      const drive = THREE.MathUtils.clamp(scrollState.velocity * 0.0016, -0.16, 0.16)
+      // Scaled so an ordinary reading scroll tilts a few degrees and only a
+      // hard flick reaches the clamp. The previous factor saturated at a
+      // velocity of ~100 when a normal wheel notch already peaks near 1200,
+      // which made the slosh binary instead of proportional.
+      const drive = THREE.MathUtils.clamp(scrollState.velocity * 0.00025, -0.16, 0.16)
       const stiffness = 90
       const damping = 7.5
       s.tiltVelocity += (drive - s.tilt) * stiffness * dt - s.tiltVelocity * damping * dt
