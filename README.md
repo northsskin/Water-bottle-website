@@ -198,22 +198,35 @@ hides behind vsync until the moment it collapses.
 
 ## Deployment
 
-Pages serves this repository **from a branch, folder `/docs`**, so the build
-output is committed: `npm run build` writes to `docs/`, and that directory *is*
-the published site. `.github/workflows/deploy.yml` rebuilds on every push and
-commits `docs/` back if it drifted from the source.
+`npm run build` writes to `docs/`, and `docs/` is committed.
+`.github/workflows/deploy.yml` then publishes it **both ways at once**: it
+uploads `docs/` as a Pages artifact and deploys it, and it commits `docs/` back
+to the branch if it ever drifts from the source. Whichever Source the repository
+is set to, the thing Pages serves is the built site.
 
-This shape was arrived at the hard way. A branch-served Pages site publishes the
-repository as-is and cannot build a Vite app, so it handed the browser
-`src/main.jsx` as raw JSX and rendered a blank page. Publishing `dist/` from a
-workflow instead requires Settings → Pages → Source to be "GitHub Actions", and
-nothing in a workflow can set that — the Actions token gets a 403 on the Pages
-config endpoint, and only a repo admin can click it. Worse, while the source is
-a branch, *both* pipelines publish on every push and the last writer wins, so the
-site flipped between working and blank at random.
+That belt-and-braces shape was arrived at the hard way, and it is deliberate.
+The Source setting was moved three times in one day, and each position fails
+differently:
 
-Putting the build in the repository ends that: whichever pipeline runs, the thing
-it publishes is the built site. Two details make it work —
+| Settings → Pages → Source | What happens without this setup |
+|---|---|
+| GitHub Actions | fine — the workflow publishes |
+| Deploy from a branch, `/docs` | Jekyll crashes: `No such file or directory - /github/workspace/docs` |
+| Deploy from a branch, `/` (root) | serves the repo as-is, hands the browser `src/main.jsx` as raw JSX → blank page |
+
+A branch-served site publishes the repository as-is and cannot build a Vite app,
+so the artifact has to already be in the repository. And nothing in a workflow
+can force the setting to Actions instead: the Actions token gets a 403 on the
+Pages config endpoint, so a workflow cannot even *read* which route is live.
+Worse, while the source was a branch, both pipelines published on every push and
+the last writer won — so the site flipped between working and blank at random.
+
+Committing the build closes all of it, because there is no longer a version of
+the repository that is worth publishing but wrong. As of the last deploy the
+source is "GitHub Actions" (`actions/deploy-pages` succeeded and no branch
+pipeline ran), but nothing depends on it staying there.
+
+Two details make it work —
 
 - **`docs/.nojekyll`** (copied from `public/`) turns Jekyll off, so Pages copies
   the files across instead of trying to render them. Without it, Jekyll skips
@@ -222,18 +235,22 @@ it publishes is the built site. Two details make it work —
   root, at a project sub-path like `user.github.io/Water-bottle-website/`, or
   behind a custom domain, with no repository name hardcoded anywhere.
 
-The workflow also uploads the same `docs/` as a Pages artifact and tries to
-deploy it, for the case where the source *is* "GitHub Actions". That job is
-allowed to fail, because exactly one of the two routes is live at a time and a
-workflow cannot read which — the Pages config endpoint is 403 to the Actions
-token. Both publish identical bytes, so whichever is in force is correct, and
-there is nothing left for the two to race over.
+The artifact-upload and deploy steps are marked `continue-on-error`: when the
+source is a branch they have nothing to deploy to, and that should read as "not
+this route today", not as a failed build.
 
-The one setting still not covered is **branch source with folder `/` (root)**,
-which serves the repository root and therefore the unbuilt `index.html`. If the
-site ever goes blank again, that is what happened: `index.html` watches for its
-own entry script failing to load — which can only happen when the source is
-being served raw — and renders a short page naming the setting to change.
+Root-folder branch source is the one position still not covered — it serves the
+unbuilt `index.html`, and no workflow can reach it. If the site ever goes blank
+again, that is what happened: `index.html` watches for its own entry script
+failing to load, which can only happen when the source is being served raw, and
+renders a short page naming the setting to change.
+
+One trap worth knowing if you touch the build: **Tailwind skips gitignored files
+when it scans for class names, and `docs/` is deliberately not gitignored.** Left
+alone it harvests class-like strings out of the previous build's bundle and emits
+a slightly larger stylesheet every time — which also rehashes the entry chunk, so
+the workflow's drift check would commit on every push. `@source not '../docs'` in
+`src/index.css` closes that loop; two consecutive builds are byte-identical.
 
 **Committing build output is not normally good practice**, and it is worth being
 plain about why it is here: a branch-served Pages site has no build step, so the
